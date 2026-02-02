@@ -10,6 +10,7 @@ from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 from utils import (
     add_image_paths,
     attach_rationales,
+    get_habitat_attrs,
     load_samples,
     safe_model_id,
     write_rows_with_rationale,
@@ -27,11 +28,20 @@ def load_split_rows(csv_path: Path, split: str):
     rows = load_samples(csv_path, split=split)
     return add_image_paths(rows, base_dir=BASE_IMAGE_DIR)
 
-def build_messages(image_paths, prompt):
+def build_messages(rows):
     all_messages = []
-    for image_path in image_paths:
-        image_path = Path(image_path).resolve()
+    for row in rows:
+        image_path = Path(row["image_path"]).resolve()
+        label = row.get("ground_truth_word_label", "").strip()
+        attrs = get_habitat_attrs(label) if label else None
+        prompt = build_prompt(label, attrs)
         messages = [
+            {
+                "role": "system", 
+                "content": [
+                    {"type": "text", "text": "You are a helpful ecologist."}
+                ],
+            }, 
             {
                 "role": "user",
                 "content": [
@@ -43,12 +53,11 @@ def build_messages(image_paths, prompt):
         all_messages.append(messages)
     return all_messages
 
-def batched_infer(model, processor, image_paths, batch_size=4):
+def batched_infer(model, processor, rows, batch_size=4):
     # Ensure left padding for batch generation (Qwen3-VL guidance)
     processor.tokenizer.padding_side = "left"
 
-    prompt = build_prompt()
-    all_messages = build_messages(image_paths, prompt)
+    all_messages = build_messages(rows)
 
     results = []
     for start in range(0, len(all_messages), batch_size):
@@ -94,12 +103,43 @@ def print_sample_paths(image_paths, split, sample_size=3):
         print(f"  {idx + 1}. {image_paths[idx]}")
 
 
-def build_prompt() -> str:
-    """Return the user prompt for the rationale task."""
-    return (
-        "Explain what you see in this ground-level habitat photo. "
-        "Provide a short rationale about the key visual cues."
+def print_sample_prompts(rows, split, sample_size=2):
+    if not rows:
+        print(f"No rows for {split} to sample prompts.")
+        return
+    count = min(sample_size, len(rows))
+    print(f"Sample prompts for {split} (showing {count} of {len(rows)}):")
+    for idx in range(count):
+        row = rows[idx]
+        label = row.get("ground_truth_word_label", "").strip()
+        attrs = get_habitat_attrs(label) if label else None
+        prompt = build_prompt(label, attrs)
+        print(f"\n--- Prompt {idx + 1} ({row.get('file_name', 'unknown')}): ---")
+        print(prompt)
+
+
+def build_prompt(label: str, attrs: dict | None) -> str:
+    """Return a prompt asking for a 1-5 consistency score with rationale."""
+    header = (
+        "You are given a ground-level habitat photo and its ground-truth label. "
+        "Assess how consistent the photo is with the label."
     )
+    score_instructions = (
+        "Score the consistency from 1 to 5 "
+        "(5 = strong match, 1 = poor match). "
+        "Provide a short rationale based on visual cues."
+    )
+    label_line = f"Ground-truth class: {label}" if label else "Ground-truth class: (unknown)"
+    if attrs:
+        attr_lines = "\n".join(f"- {key}: {value}" for key, value in attrs.items())
+        attr_block = f"Typical visual attributes:\n{attr_lines}"
+    else:
+        attr_block = "Typical visual attributes: (not available)"
+    output_format = (
+        "Respond ONLY with valid JSON in the exact format:\n"
+        '{"score": <1-5>, "rationale": "<short text>"}'
+    )
+    return "\n\n".join([header, label_line, attr_block, score_instructions, output_format])
 
 
 def load_qwen_and_processor(model_id: str, use_bfloat16: bool):
@@ -139,6 +179,12 @@ def parse_args() -> argparse.Namespace:
         help="Number of sample image paths to print per split.",
     )
     parser.add_argument(
+        "--sample-prompts",
+        type=int,
+        default=0,
+        help="Number of sample prompts to print per split.",
+    )
+    parser.add_argument(
         "--bfloat16",
         action="store_true",
         help="Use bfloat16 weights if supported by your hardware.",
@@ -159,16 +205,18 @@ def main() -> None:
 
     for split, csv_path in splits:
         rows = load_split_rows(csv_path, split=split)
-        image_paths = [row["image_path"] for row in rows]
-        if not image_paths:
+        if not rows:
             print(f"No rows found for {split}; skipping.")
             continue
 
         if args.sample_paths > 0:
+            image_paths = [row["image_path"] for row in rows]
             print_sample_paths(image_paths, split, sample_size=args.sample_paths)
+        if args.sample_prompts > 0:
+            print_sample_prompts(rows, split, sample_size=args.sample_prompts)
 
         rationales = batched_infer(
-            model, processor, image_paths, batch_size=args.batch_size
+            model, processor, rows, batch_size=args.batch_size
         )
         updated_rows = attach_rationales(rows, rationales)
         out_path = OUTPUT_DIR / f"{split}_{model_tag}.csv"

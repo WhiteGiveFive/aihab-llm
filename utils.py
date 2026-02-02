@@ -5,6 +5,8 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 from typing import Iterable, List, Dict, Optional
+
+import cs_hab
 from PIL import Image
 
 
@@ -92,6 +94,27 @@ def attach_rationales(rows, rationales):
 
 def safe_model_id(model_id):
     return model_id.replace("/", "_").replace(":", "_")
+
+
+def get_habitat_attrs(label: str) -> Optional[Dict[str, str]]:
+    """Return the attribute dict for a habitat label, or None if not found."""
+    attr_maps = [
+        cs_hab.GRASSLAND_L3_ATTRS,
+        cs_hab.WETLAND_L3_ATTRS,
+        cs_hab.HEATHLAND_L3_ATTRS,
+        cs_hab.CROPLAND_L3_ATTRS,
+        cs_hab.WOODLAND_L3_ATTRS,
+        cs_hab.MARINE_L3_ATTRS,
+        cs_hab.MONTANE_L3_ATTRS,
+        cs_hab.RIVERS_L3_ATTRS,
+        cs_hab.SPARSE_L3_ATTRS,
+        cs_hab.URBAN_L3_ATTRS,
+        cs_hab.SEA_L3_ATTRS,
+    ]
+    for attr_map in attr_maps:
+        if label in attr_map:
+            return attr_map[label]
+    return None
 
 
 def load_image(image_path: Path) -> Image.Image:
