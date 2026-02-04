@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 import torch
+from tqdm import tqdm
 from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 from utils import (
     add_image_paths,
@@ -60,7 +61,12 @@ def batched_infer(model, processor, rows, batch_size=4):
     all_messages = build_messages(rows)
 
     results = []
-    for start in range(0, len(all_messages), batch_size):
+    total_batches = (len(all_messages) + batch_size - 1) // batch_size
+    for start in tqdm(
+        range(0, len(all_messages), batch_size),
+        total=total_batches,
+        desc="batches",
+    ):
         batch_messages = all_messages[start : start + batch_size]
 
         # Build inputs for the batch
