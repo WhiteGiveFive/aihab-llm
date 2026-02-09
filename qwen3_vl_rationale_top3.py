@@ -48,10 +48,10 @@ OUTPUT_DIR = DATA_TABLES_DIR / "qwen3_vl_outputs"
 
 
 # ---- Data loading helpers ----
-def load_split_rows(csv_path: Path, split: str):
+def load_split_rows(csv_path: Path, split: str, base_dir: Path):
     """Load a CSV split and attach image paths (reuse utils.add_image_paths)."""
     rows = load_samples(csv_path, split=split)
-    return add_image_paths(rows, base_dir=BASE_IMAGE_DIR)
+    return add_image_paths(rows, base_dir=base_dir)
 
 
 def map_l3_id_to_name(l3_id: str) -> str:
@@ -334,6 +334,18 @@ def parse_args() -> argparse.Namespace:
         choices=("top3", "all_l3_names"),
         help="Prompt style: top3 candidates with attributes, or all L3 names only.",
     )
+    parser.add_argument(
+        "--base-image-dir",
+        type=Path,
+        default=BASE_IMAGE_DIR,
+        help="Base directory containing CS images.",
+    )
+    parser.add_argument(
+        "--data-tables-dir",
+        type=Path,
+        default=DATA_TABLES_DIR,
+        help="Directory containing mis/correct CSVs and output folder.",
+    )
     # Optional: add sample prompt/paths flags, mirroring qwen3_vl_reasoning.py
     return parser.parse_args()
 
@@ -354,13 +366,17 @@ def main() -> None:
     model, processor = load_qwen_and_processor(args.model_id, args.bfloat16)
     model_tag = safe_model_id(args.model_id)
 
+    base_image_dir = args.base_image_dir
+    data_tables_dir = args.data_tables_dir
+    output_dir = data_tables_dir / "qwen3_vl_outputs"
+
     splits = [
-        ("mis", DATA_TABLES_DIR / "mis.csv"),
-        ("correct", DATA_TABLES_DIR / "correct.csv"),
+        ("mis", data_tables_dir / "mis.csv"),
+        ("correct", data_tables_dir / "correct.csv"),
     ]
 
     for split, csv_path in splits:
-        rows = load_split_rows(csv_path, split=split)
+        rows = load_split_rows(csv_path, split=split, base_dir=base_image_dir)
         if not rows:
             print(f"No rows found for {split}; skipping.")
             continue
@@ -387,7 +403,7 @@ def main() -> None:
         updated_rows = attach_rationales(rows, outputs)
 
         suffix = "choose_from_top3" if args.prompt_mode == "top3" else "choose_from_all_l3"
-        out_path = OUTPUT_DIR / f"{split}_{model_tag}_{suffix}.csv"
+        out_path = output_dir / f"{split}_{model_tag}_{suffix}.csv"
         write_rows_with_rationale(updated_rows, out_path)
         print(f"Wrote {len(updated_rows)} rows to {out_path}")
 

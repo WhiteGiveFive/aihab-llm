@@ -25,9 +25,9 @@ DATA_TABLES_DIR = Path(
     "/home/hshi/Documents/researchproject/aihab/repo/aihab-llm/data_tables"
 )
 OUTPUT_DIR = DATA_TABLES_DIR / "qwen3_vl_outputs"
-def load_split_rows(csv_path: Path, split: str):
+def load_split_rows(csv_path: Path, split: str, base_dir: Path):
     rows = load_samples(csv_path, split=split)
-    return add_image_paths(rows, base_dir=BASE_IMAGE_DIR)
+    return add_image_paths(rows, base_dir=base_dir)
 
 def build_messages(rows):
     all_messages = []
@@ -201,6 +201,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Use bfloat16 weights if supported by your hardware.",
     )
+    parser.add_argument(
+        "--base-image-dir",
+        type=Path,
+        default=BASE_IMAGE_DIR,
+        help="Base directory containing CS images.",
+    )
+    parser.add_argument(
+        "--data-tables-dir",
+        type=Path,
+        default=DATA_TABLES_DIR,
+        help="Directory containing mis/correct CSVs and output folder.",
+    )
     return parser.parse_args()
 
 
@@ -210,13 +222,17 @@ def main() -> None:
     model, processor = load_qwen_and_processor(args.model_id, args.bfloat16)
     model_tag = safe_model_id(args.model_id)
 
+    base_image_dir = args.base_image_dir
+    data_tables_dir = args.data_tables_dir
+    output_dir = data_tables_dir / "qwen3_vl_outputs"
+
     splits = [
-        ("mis", DATA_TABLES_DIR / "mis.csv"),
-        ("correct", DATA_TABLES_DIR / "correct.csv"),
+        ("mis", data_tables_dir / "mis.csv"),
+        ("correct", data_tables_dir / "correct.csv"),
     ]
 
     for split, csv_path in splits:
-        rows = load_split_rows(csv_path, split=split)
+        rows = load_split_rows(csv_path, split=split, base_dir=base_image_dir)
         if not rows:
             print(f"No rows found for {split}; skipping.")
             continue
@@ -235,7 +251,7 @@ def main() -> None:
             max_new_tokens=args.max_new_tokens,
         )
         updated_rows = attach_rationales(rows, rationales)
-        out_path = OUTPUT_DIR / f"{split}_{model_tag}.csv"
+        out_path = output_dir / f"{split}_{model_tag}.csv"
         write_rows_with_rationale(updated_rows, out_path)
         print(f"Wrote {len(updated_rows)} rows to {out_path}")
 
