@@ -54,7 +54,7 @@ def build_messages(rows):
         all_messages.append(messages)
     return all_messages
 
-def batched_infer(model, processor, rows, batch_size=4):
+def batched_infer(model, processor, rows, batch_size=4, max_new_tokens=256):
     # Ensure left padding for batch generation (Qwen3-VL guidance)
     processor.tokenizer.padding_side = "left"
 
@@ -83,7 +83,7 @@ def batched_infer(model, processor, rows, batch_size=4):
         # Generate
         output_ids = model.generate(
             **inputs,
-            max_new_tokens=256,
+            max_new_tokens=max_new_tokens,
         )
 
         # Trim prompt tokens and decode
@@ -179,6 +179,12 @@ def parse_args() -> argparse.Namespace:
         help="Number of images per batch.",
     )
     parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=256,
+        help="Maximum number of tokens to generate per sample.",
+    )
+    parser.add_argument(
         "--sample-paths",
         type=int,
         default=0,
@@ -222,7 +228,11 @@ def main() -> None:
             print_sample_prompts(rows, split, sample_size=args.sample_prompts)
 
         rationales = batched_infer(
-            model, processor, rows, batch_size=args.batch_size
+            model,
+            processor,
+            rows,
+            batch_size=args.batch_size,
+            max_new_tokens=args.max_new_tokens,
         )
         updated_rows = attach_rationales(rows, rationales)
         out_path = OUTPUT_DIR / f"{split}_{model_tag}.csv"
