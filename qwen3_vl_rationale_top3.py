@@ -1,13 +1,18 @@
-"""Choose the best habitat from top-3 candidates using Qwen3-VL.
+"""Choose the best habitat using Qwen3-VL with configurable prompt styles.
 
-This script mirrors the batching/inference flow in `qwen3_vl_reasoning.py`, but
-builds a prompt that forces the model to choose one of the three L3 candidates
-(top3_label_1..3). It uses REASSIGN_LABEL_NAME_L3 for id->name mapping and
-attributes from *_L3_ATTRS via `get_habitat_attrs`.
+This script mirrors the batching/inference flow in `qwen3_vl_reasoning.py` and
+supports two prompt modes:
+1) `top3`: choose from the per-row top-3 L3 candidates with attributes.
+2) `all_l3_names`: choose from the full L3 list (names only, no attributes).
 
-Outputs new CSVs:
+It maps L3 ids using `REASSIGN_LABEL_NAME_L3` and pulls attributes from
+`*_L3_ATTRS` via `get_habitat_attrs` when `top3` mode is used.
+
+Outputs new CSVs (names differ by prompt mode):
   - data_tables/qwen3_vl_outputs/mis_Qwen_Qwen3-VL-4B-Instruct_choose_from_top3.csv
   - data_tables/qwen3_vl_outputs/correct_Qwen_Qwen3-VL-4B-Instruct_choose_from_top3.csv
+  - data_tables/qwen3_vl_outputs/mis_Qwen_Qwen3-VL-4B-Instruct_choose_from_all_l3.csv
+  - data_tables/qwen3_vl_outputs/correct_Qwen_Qwen3-VL-4B-Instruct_choose_from_all_l3.csv
 """
 
 from __future__ import annotations
@@ -96,7 +101,25 @@ def build_prompt_top3(candidates: List[Dict[str, str]]) -> str:
     return "\n\n".join([header, candidate_block, constraints, output_format])
 
 
-def build_messages(rows: List[Dict[str, str]]):
+def build_prompt_all_l3_names_only(l3_names: List[str]) -> str:
+    """Build a forced-choice prompt using all L3 habitat names (no attributes)."""
+    header = (
+        "You are given a ground-level habitat photo and a list of candidate habitat classes. "
+        "Select exactly one habitat that best matches the photo."
+    )
+    candidate_block = f"Candidates: {json.dumps(l3_names, ensure_ascii=True)}"
+    constraints = (
+        "predicted habitat must be exactly one of the candidate names. "
+        "Provide a short rationale based on visible cues."
+    )
+    output_format = (
+        "Respond ONLY with valid JSON in the exact format:\n"
+        '{"pred_habitat":"<one of candidates>","rationale":"<short text>"}'
+    )
+    return "\n\n".join([header, candidate_block, constraints, output_format])
+
+
+def build_messages(rows: List[Dict[str, str]], use_all_l3_names: bool = False):
     """Create chat messages with image + candidate prompt per row.
 
     Reuse the same message structure as qwen3_vl_reasoning.py.
@@ -106,18 +129,25 @@ def build_messages(rows: List[Dict[str, str]]):
             return "(not available)"
         return "; ".join(f"{key}: {value}" for key, value in attrs.items())
 
+    all_l3_names = None
+    if use_all_l3_names:
+        all_l3_names = [name for _, name in sorted(REASSIGN_LABEL_NAME_L3.items())]
+
     all_messages = []
     for row in rows:
         image_path = Path(row["image_path"]).resolve()
 
-        ids = [row["top3_label_1"], row["top3_label_2"], row["top3_label_3"]]
-        names = [map_l3_id_to_name(l3_id) for l3_id in ids]
-        attr_dicts = [get_habitat_attrs(name) for name in names]
-        candidates = [
-            {"name": name, "attrs": format_attrs(attrs)}
-            for name, attrs in zip(names, attr_dicts)
-        ]
-        prompt = build_prompt_top3(candidates)
+        if use_all_l3_names:
+            prompt = build_prompt_all_l3_names_only(all_l3_names)
+        else:
+            ids = [row["top3_label_1"], row["top3_label_2"], row["top3_label_3"]]
+            names = [map_l3_id_to_name(l3_id) for l3_id in ids]
+            attr_dicts = [get_habitat_attrs(name) for name in names]
+            candidates = [
+                {"name": name, "attrs": format_attrs(attrs)}
+                for name, attrs in zip(names, attr_dicts)
+            ]
+            prompt = build_prompt_top3(candidates)
 
         messages = [
             {
@@ -136,12 +166,19 @@ def build_messages(rows: List[Dict[str, str]]):
     return all_messages
 
 
-def batched_infer(model, processor, rows, batch_size=4, max_new_tokens=256):
+def batched_infer(
+    model,
+    processor,
+    rows,
+    batch_size=4,
+    max_new_tokens=256,
+    use_all_l3_names: bool = False,
+):
     """Run batched inference (reuse logic from qwen3_vl_reasoning.py)."""
     # Ensure left padding for batch generation (Qwen3-VL guidance)
     processor.tokenizer.padding_side = "left"
 
-    all_messages = build_messages(rows)
+    all_messages = build_messages(rows, use_all_l3_names=use_all_l3_names)
 
     results = []
     total_batches = (len(all_messages) + batch_size - 1) // batch_size
@@ -193,28 +230,36 @@ def print_sample_paths(image_paths, split, sample_size=3):
         print(f"  {idx + 1}. {image_paths[idx]}")
 
 
-def print_sample_prompts(rows, split, sample_size=2):
+def print_sample_prompts(rows, split, sample_size=2, use_all_l3_names: bool = False):
     """Print a few constructed prompts for quick inspection."""
     if not rows:
         print(f"No rows for {split} to sample prompts.")
         return
     count = min(sample_size, len(rows))
     print(f"Sample prompts for {split} (showing {count} of {len(rows)}):")
+    all_l3_names = None
+    if use_all_l3_names:
+        all_l3_names = [name for _, name in sorted(REASSIGN_LABEL_NAME_L3.items())]
     for idx in range(count):
         row = rows[idx]
-        ids = [row["top3_label_1"], row["top3_label_2"], row["top3_label_3"]]
-        names = [map_l3_id_to_name(l3_id) for l3_id in ids]
-        attr_dicts = [get_habitat_attrs(name) for name in names]
-        candidates = [
-            {
-                "name": name,
-                "attrs": "; ".join(f"{key}: {value}" for key, value in (attrs or {}).items())
-                if attrs
-                else "(not available)",
-            }
-            for name, attrs in zip(names, attr_dicts)
-        ]
-        prompt = build_prompt_top3(candidates)
+        if use_all_l3_names:
+            prompt = build_prompt_all_l3_names_only(all_l3_names)
+        else:
+            ids = [row["top3_label_1"], row["top3_label_2"], row["top3_label_3"]]
+            names = [map_l3_id_to_name(l3_id) for l3_id in ids]
+            attr_dicts = [get_habitat_attrs(name) for name in names]
+            candidates = [
+                {
+                    "name": name,
+                    "attrs": "; ".join(
+                        f"{key}: {value}" for key, value in (attrs or {}).items()
+                    )
+                    if attrs
+                    else "(not available)",
+                }
+                for name, attrs in zip(names, attr_dicts)
+            ]
+            prompt = build_prompt_top3(candidates)
         print(f"\n--- Prompt {idx + 1} ({row.get('file_name', 'unknown')}): ---")
         print(prompt)
 
@@ -282,6 +327,13 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Number of sample prompts to print per split.",
     )
+    parser.add_argument(
+        "--prompt-mode",
+        type=str,
+        default="top3",
+        choices=("top3", "all_l3_names"),
+        help="Prompt style: top3 candidates with attributes, or all L3 names only.",
+    )
     # Optional: add sample prompt/paths flags, mirroring qwen3_vl_reasoning.py
     return parser.parse_args()
 
@@ -317,7 +369,12 @@ def main() -> None:
             image_paths = [row["image_path"] for row in rows]
             print_sample_paths(image_paths, split, sample_size=args.sample_paths)
         if args.sample_prompts > 0:
-            print_sample_prompts(rows, split, sample_size=args.sample_prompts)
+            print_sample_prompts(
+                rows,
+                split,
+                sample_size=args.sample_prompts,
+                use_all_l3_names=(args.prompt_mode == "all_l3_names"),
+            )
 
         outputs = batched_infer(
             model,
@@ -325,10 +382,12 @@ def main() -> None:
             rows,
             batch_size=args.batch_size,
             max_new_tokens=args.max_new_tokens,
+            use_all_l3_names=(args.prompt_mode == "all_l3_names"),
         )
         updated_rows = attach_rationales(rows, outputs)
 
-        out_path = OUTPUT_DIR / f"{split}_{model_tag}_choose_from_top3.csv"
+        suffix = "choose_from_top3" if args.prompt_mode == "top3" else "choose_from_all_l3"
+        out_path = OUTPUT_DIR / f"{split}_{model_tag}_{suffix}.csv"
         write_rows_with_rationale(updated_rows, out_path)
         print(f"Wrote {len(updated_rows)} rows to {out_path}")
 
