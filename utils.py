@@ -5,6 +5,8 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 from typing import Iterable, List, Dict, Optional
+from transformers import Qwen3VLForConditionalGeneration, Qwen3VLMoeForConditionalGeneration, AutoProcessor
+import torch
 
 import cs_hab
 from PIL import Image
@@ -148,3 +150,39 @@ def prepare_inputs(processor, image_path: Path, prompt: str):
     # Fallback: simple text+image encoding.
     image = load_image(image_path)
     return processor(text=prompt, images=image, return_tensors="pt")
+
+
+# Modules for model loading
+MODEL_ZOO = {
+    'qwen': {
+        'dense': ['Qwen/Qwen3-VL-4B-Instruct', 'Qwen/Qwen3-VL-4B-Thinking', 'Qwen/Qwen3-VL-8B-Instruct', 'Qwen/Qwen3-VL-8B-Thinking'], 
+        'moe': ['Qwen/Qwen3-VL-30B-A3B-Instruct', 'Qwen/Qwen3-VL-30B-A3B-Thinking']
+        }, 
+}
+
+
+def select_qwen3_generator(model_id: str):
+    model_id = model_id.strip()
+    if model_id in set(MODEL_ZOO.get("qwen", {}).get("moe", [])):
+        return Qwen3VLMoeForConditionalGeneration
+    if model_id in set(MODEL_ZOO.get("qwen", {}).get("dense", [])):
+        return Qwen3VLForConditionalGeneration
+    raise ValueError(
+        f"Unknown Qwen model_id: {model_id}. "
+        f"Please add it to utils.MODEL_ZOO['qwen']."
+    )
+
+def load_qwen_and_processor(model_id: str, use_bfloat16: bool):
+    """Load the HF processor and model. Adjust classes here if needed."""
+    # NOTE: Qwen3-VL may require a specific model class from transformers.
+    # If AutoModelForCausalLM fails, replace it with the recommended class from HF.
+
+    dtype = torch.bfloat16 if use_bfloat16 else "auto"
+    processor = AutoProcessor.from_pretrained(model_id)
+    model_generator = select_qwen3_generator(model_id)
+    model = model_generator.from_pretrained(
+        model_id, dtype=dtype, device_map="auto"
+        )
+
+    return model, processor
+    

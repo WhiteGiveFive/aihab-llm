@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-
-import torch
 from tqdm import tqdm
-from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
+
 from utils import (
     add_image_paths,
     attach_rationales,
@@ -15,6 +13,7 @@ from utils import (
     load_samples,
     safe_model_id,
     write_rows_with_rationale,
+    load_qwen_and_processor, 
 )
 
 MODEL_ID = "Qwen/Qwen3-VL-4B-Instruct"
@@ -25,6 +24,8 @@ DATA_TABLES_DIR = Path(
     "/home/hshi/Documents/researchproject/aihab/repo/aihab-llm/data_tables"
 )
 OUTPUT_DIR = DATA_TABLES_DIR / "qwen3_vl_outputs"
+
+
 def load_split_rows(csv_path: Path, split: str, base_dir: Path):
     rows = load_samples(csv_path, split=split)
     return add_image_paths(rows, base_dir=base_dir)
@@ -146,20 +147,6 @@ def build_prompt(label: str, attrs: dict | None) -> str:
         '{"score": <1-5>, "rationale": "<short text>"}'
     )
     return "\n\n".join([header, label_line, attr_block, score_instructions, output_format])
-
-
-def load_qwen_and_processor(model_id: str, use_bfloat16: bool):
-    """Load the HF processor and model. Adjust classes here if needed."""
-    # NOTE: Qwen3-VL may require a specific model class from transformers.
-    # If AutoModelForCausalLM fails, replace it with the recommended class from HF.
-
-    dtype = torch.bfloat16 if use_bfloat16 else "auto"
-    processor = AutoProcessor.from_pretrained(model_id)
-    model = Qwen3VLForConditionalGeneration.from_pretrained(
-        model_id, dtype=dtype, device_map="auto"
-        )
-
-    return model, processor
 
 
 def parse_args() -> argparse.Namespace:

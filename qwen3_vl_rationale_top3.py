@@ -21,10 +21,7 @@ import argparse
 import json
 from pathlib import Path
 from typing import Dict, List, Optional
-
-import torch
 from tqdm import tqdm
-from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 
 from cs_hab import REASSIGN_LABEL_NAME_L3
 from utils import (
@@ -33,7 +30,8 @@ from utils import (
     load_samples,             # reused for CSV reading
     safe_model_id,            # reused for output naming
     attach_rationales,        # reused for output saving
-    write_rows_with_rationale # reused for output saving
+    write_rows_with_rationale, # reused for output saving
+    load_qwen_and_processor, 
 )
 
 # ---- Constants (aligned with qwen3_vl_reasoning.py) ----
@@ -348,16 +346,6 @@ def parse_args() -> argparse.Namespace:
     )
     # Optional: add sample prompt/paths flags, mirroring qwen3_vl_reasoning.py
     return parser.parse_args()
-
-
-def load_qwen_and_processor(model_id: str, use_bfloat16: bool):
-    """Load the HF processor and model (reuse from qwen3_vl_reasoning.py)."""
-    dtype = torch.bfloat16 if use_bfloat16 else "auto"
-    processor = AutoProcessor.from_pretrained(model_id)
-    model = Qwen3VLForConditionalGeneration.from_pretrained(
-        model_id, dtype=dtype, device_map="auto"
-    )
-    return model, processor
 
 
 def main() -> None:

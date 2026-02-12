@@ -83,6 +83,8 @@ def extract_pred_candidate(raw_text: str, row_idx: int, csv_path: Path) -> str:
         )
     if "pred_candidate" in parsed:
         pred = parsed["pred_candidate"]
+    elif "pred_habitat" in parsed:
+        pred = parsed["pred_habitat"]
     else:
         raise ValueError(
             f"Missing pred_candidate at row {row_idx} in {csv_path}: {raw!r}"
