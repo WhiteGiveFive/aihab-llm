@@ -129,7 +129,7 @@ def build_prompt(label: str, attrs: dict | None) -> str:
     """Return a prompt asking for a 1-5 consistency score with rationale."""
     header = (
         "You are given a ground-level habitat photo and its ground-truth label. "
-        "Assess how consistent the photo is with the label."
+        "Assess how consistent the photo is with the label. "
         "Ignore non-habitat, human-made objects (e.g., people, bags, equipment, panels) and base your choice only on habitat cues."
     )
     score_instructions = (

@@ -81,7 +81,8 @@ def build_prompt_top3(candidates: List[Dict[str, str]]) -> str:
         raise ValueError(f"Expected 3 candidates, got {len(candidates)}.")
     header = (
         "You are given a ground-level habitat photo and three candidate habitat classes with typical visual descriptions. "
-        "Analyse the photo with your ecology expertise and the given descriptions, and select exactly one habitat from the candidates that best match the photo."
+        "Analyse the photo with your ecology expertise and the given descriptions, and select exactly one habitat from the candidates that best match the photo. "
+        "Ignore non-habitat, human-made objects (e.g., people, bags, equipment, panels) and base your choice only on habitat cues."
     )
     payload = {"candidates": candidates}
     candidate_block = (
@@ -103,7 +104,7 @@ def build_prompt_all_l3_names_only(l3_names: List[str]) -> str:
     """Build a forced-choice prompt using all L3 habitat names (no attributes)."""
     header = (
         "You are given a ground-level habitat photo and a list of candidate habitat classes. "
-        "Select exactly one habitat that best matches the photo."
+        "Select exactly one habitat that best matches the photo. "
         "Ignore non-habitat, human-made objects (e.g., people, bags, equipment, panels) and base your choice only on habitat cues."
     )
     candidate_block = f"Candidates: {json.dumps(l3_names, ensure_ascii=True)}"
