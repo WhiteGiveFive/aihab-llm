@@ -104,6 +104,7 @@ def build_prompt_all_l3_names_only(l3_names: List[str]) -> str:
     header = (
         "You are given a ground-level habitat photo and a list of candidate habitat classes. "
         "Select exactly one habitat that best matches the photo."
+        "Ignore non-habitat, human-made objects (e.g., people, bags, equipment, panels) and base your choice only on habitat cues."
     )
     candidate_block = f"Candidates: {json.dumps(l3_names, ensure_ascii=True)}"
     constraints = (
