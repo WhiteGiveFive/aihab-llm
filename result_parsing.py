@@ -7,8 +7,11 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 from pathlib import Path
 from typing import List
+
+FENCED_JSON_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.IGNORECASE | re.DOTALL)
 
 def parse_model_outputs(
     outputs: List[str],
@@ -66,32 +69,51 @@ def read_csv_rows(csv_path: Path) -> List[dict]:
         return list(reader)
 
 
-def extract_pred_candidate(raw_text: str, row_idx: int, csv_path: Path) -> str:
-    """Extract pred_candidate from a JSON string in the rationale column."""
+def parse_rationale_json(raw_text: str, row_idx: int, csv_path: Path) -> dict:
+    """Parse rationale text into a JSON object.
+
+    Supports:
+    - Plain JSON object text.
+    - Markdown fenced JSON (```json ... ```).
+    - Multiple fenced blocks; last block is attempted first (to honor corrections).
+    """
     raw = (raw_text or "").strip()
     if raw == "":
         raise ValueError(f"Empty rationale at row {row_idx} in {csv_path}")
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(
-            f"Malformed JSON at row {row_idx} in {csv_path}: {raw!r}"
-        ) from exc
-    if not isinstance(parsed, dict):
-        raise ValueError(
-            f"Rationale is not a JSON object at row {row_idx} in {csv_path}: {raw!r}"
-        )
+
+    blocks = [block.strip() for block in FENCED_JSON_RE.findall(raw) if block.strip()]
+    candidates = list(reversed(blocks)) if blocks else [raw]
+
+    last_error = None
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            last_error = exc
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+        last_error = ValueError("Rationale JSON is not an object.")
+
+    raise ValueError(
+        f"Malformed JSON at row {row_idx} in {csv_path}: {raw!r}"
+    ) from last_error
+
+
+def extract_pred_candidate(raw_text: str, row_idx: int, csv_path: Path) -> str:
+    """Extract pred_candidate from a JSON string in the rationale column."""
+    parsed = parse_rationale_json(raw_text, row_idx, csv_path)
     if "pred_candidate" in parsed:
         pred = parsed["pred_candidate"]
     elif "pred_habitat" in parsed:
         pred = parsed["pred_habitat"]
     else:
         raise ValueError(
-            f"Missing pred_candidate at row {row_idx} in {csv_path}: {raw!r}"
+            f"Missing pred_candidate/pred_habitat at row {row_idx} in {csv_path}: {parsed!r}"
         )
     if not isinstance(pred, str):
         raise ValueError(
-            f"pred_candidate is not a string at row {row_idx} in {csv_path}: {raw!r}"
+            f"pred_candidate is not a string at row {row_idx} in {csv_path}: {parsed!r}"
         )
     return pred.strip()
 

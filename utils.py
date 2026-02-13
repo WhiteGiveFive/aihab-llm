@@ -155,7 +155,8 @@ def prepare_inputs(processor, image_path: Path, prompt: str):
 # Modules for model loading
 MODEL_ZOO = {
     'qwen': {
-        'dense': ['Qwen/Qwen3-VL-4B-Instruct', 'Qwen/Qwen3-VL-4B-Thinking', 'Qwen/Qwen3-VL-8B-Instruct', 'Qwen/Qwen3-VL-8B-Thinking'], 
+        'dense': ['Qwen/Qwen3-VL-4B-Instruct', 'Qwen/Qwen3-VL-4B-Thinking', 'Qwen/Qwen3-VL-8B-Instruct', 
+        'Qwen/Qwen3-VL-8B-Thinking', 'Qwen/Qwen3-VL-32B-Instruct', 'Qwen/Qwen3-VL-32B-Thinking'], 
         'moe': ['Qwen/Qwen3-VL-30B-A3B-Instruct', 'Qwen/Qwen3-VL-30B-A3B-Thinking']
         }, 
     'mistral': {
