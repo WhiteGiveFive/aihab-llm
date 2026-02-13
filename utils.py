@@ -158,6 +158,19 @@ MODEL_ZOO = {
         'dense': ['Qwen/Qwen3-VL-4B-Instruct', 'Qwen/Qwen3-VL-4B-Thinking', 'Qwen/Qwen3-VL-8B-Instruct', 'Qwen/Qwen3-VL-8B-Thinking'], 
         'moe': ['Qwen/Qwen3-VL-30B-A3B-Instruct', 'Qwen/Qwen3-VL-30B-A3B-Thinking']
         }, 
+    'mistral': {
+        'ministral': [
+            'mistralai/Ministral-3-3B-Instruct-2512', 
+            'mistralai/Ministral-3-8B-Instruct-2512', 
+            'mistralai/Ministral-3-14B-Instruct-2512', 
+            'mistralai/Ministral-3-3B-Reasoning-2512', 
+            'mistralai/Ministral-3-8B-Reasoning-2512', 
+            'mistralai/Ministral-3-14B-Reasoning-2512'
+            ]
+    }, 
+    'zai-org': {
+        'GLM-4.6V': ['zai-org/GLM-4.6V-Flash']
+    }
 }
 
 
