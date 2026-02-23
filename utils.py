@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 from typing import Iterable, List, Dict, Optional
-from transformers import Qwen3VLForConditionalGeneration, Qwen3VLMoeForConditionalGeneration, AutoProcessor
+from transformers import Qwen3VLForConditionalGeneration, Qwen3VLMoeForConditionalGeneration, Glm4vForConditionalGeneration, AutoProcessor
 import torch
 
 import cs_hab
@@ -181,9 +181,11 @@ def select_qwen3_generator(model_id: str):
         return Qwen3VLMoeForConditionalGeneration
     if model_id in set(MODEL_ZOO.get("qwen", {}).get("dense", [])):
         return Qwen3VLForConditionalGeneration
+    if model_id in set(MODEL_ZOO.get("zai-org", {}).get("GLM-4.6V", [])):
+        return Glm4vForConditionalGeneration
     raise ValueError(
-        f"Unknown Qwen model_id: {model_id}. "
-        f"Please add it to utils.MODEL_ZOO['qwen']."
+        f"Unknown Qwen or GLM model_id: {model_id}. "
+        f"Please add it to utils.MODEL_ZOO."
     )
 
 def load_qwen_and_processor(model_id: str, use_bfloat16: bool):

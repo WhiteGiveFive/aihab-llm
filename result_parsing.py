@@ -12,6 +12,73 @@ from pathlib import Path
 from typing import List
 
 FENCED_JSON_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.IGNORECASE | re.DOTALL)
+PRED_FIELD_JSON_RE = re.compile(
+    r'"(?:pred_candidate|pred_habitat)"\s*:\s*"((?:\\.|[^"\\])*)"',
+    re.IGNORECASE | re.DOTALL,
+)
+PRED_FIELD_PY_RE = re.compile(
+    r"'(?:pred_candidate|pred_habitat)'\s*:\s*'((?:\\.|[^'\\])*)'",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _load_json_object_relaxed(candidate: str) -> dict | None:
+    """Best-effort parse of a JSON object from potentially noisy text.
+
+    This accepts:
+    - Strict JSON object text.
+    - A JSON object followed by trailing garbage (e.g., stray `}` or backticks).
+    - Leading text before the first JSON object.
+    """
+    text = candidate.strip()
+    if text == "":
+        return None
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        parsed = None
+    if isinstance(parsed, dict):
+        return parsed
+
+    decoder = json.JSONDecoder()
+    start_positions = [0]
+    first_obj_start = text.find("{")
+    if first_obj_start > 0:
+        start_positions.append(first_obj_start)
+
+    for start in start_positions:
+        try:
+            parsed, _ = decoder.raw_decode(text, idx=start)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _extract_pred_field_relaxed(raw_text: str) -> str | None:
+    """Best-effort extraction of pred field from malformed JSON-like text."""
+    text = (raw_text or "").strip()
+    if text == "":
+        return None
+
+    match = PRED_FIELD_JSON_RE.search(text)
+    if match:
+        value = match.group(1)
+        try:
+            return json.loads(f'"{value}"').strip()
+        except json.JSONDecodeError:
+            cleaned = value.replace('\\"', '"').replace("\\\\", "\\").strip()
+            return cleaned if cleaned else None
+
+    match = PRED_FIELD_PY_RE.search(text)
+    if match:
+        value = match.group(1)
+        cleaned = value.replace("\\'", "'").replace("\\\\", "\\").strip()
+        return cleaned if cleaned else None
+
+    return None
 
 def parse_model_outputs(
     outputs: List[str],
@@ -76,6 +143,7 @@ def parse_rationale_json(raw_text: str, row_idx: int, csv_path: Path) -> dict:
     - Plain JSON object text.
     - Markdown fenced JSON (```json ... ```).
     - Multiple fenced blocks; last block is attempted first (to honor corrections).
+    - Minor malformations where valid JSON object is wrapped in extra text.
     """
     raw = (raw_text or "").strip()
     if raw == "":
@@ -86,12 +154,8 @@ def parse_rationale_json(raw_text: str, row_idx: int, csv_path: Path) -> dict:
 
     last_error = None
     for candidate in candidates:
-        try:
-            parsed = json.loads(candidate)
-        except json.JSONDecodeError as exc:
-            last_error = exc
-            continue
-        if isinstance(parsed, dict):
+        parsed = _load_json_object_relaxed(candidate)
+        if parsed is not None:
             return parsed
         last_error = ValueError("Rationale JSON is not an object.")
 
@@ -102,7 +166,13 @@ def parse_rationale_json(raw_text: str, row_idx: int, csv_path: Path) -> dict:
 
 def extract_pred_candidate(raw_text: str, row_idx: int, csv_path: Path) -> str:
     """Extract pred_candidate from a JSON string in the rationale column."""
-    parsed = parse_rationale_json(raw_text, row_idx, csv_path)
+    try:
+        parsed = parse_rationale_json(raw_text, row_idx, csv_path)
+    except ValueError:
+        pred = _extract_pred_field_relaxed(raw_text)
+        if pred is not None:
+            return pred
+        raise
     if "pred_candidate" in parsed:
         pred = parsed["pred_candidate"]
     elif "pred_habitat" in parsed:
